@@ -6,7 +6,7 @@ import urllib.request
 import zipfile
 import tarfile
 import platform
-	
+
 #  python3 setup.py built_ext --inplace
 
 VERSION = '2.0.3'
@@ -15,6 +15,11 @@ RAYLIB_BASE = 'https://github.com/raysan5/raylib/releases/download/5.0/'
 RAYLIB_NAME = 'raylib-5.0_macos' if platform.system() == "Darwin" else 'raylib-5.0_linux_amd64'
 RAYLIB_WASM_URL = RAYLIB_BASE + 'raylib-5.0_webassembly.zip'
 RAYLIB_URL = RAYLIB_BASE + RAYLIB_NAME + '.tar.gz'
+
+if platform.system() == "Darwin":
+    RAYLIB_INCLUDE_DIR = 'raylib/include'
+else:
+    RAYLIB_INCLUDE_DIR = 'raylib-5.0_linux_amd64/include'
 
 if not os.path.exists('raylib'):
     print("Raylib not found, downloading...")
@@ -33,7 +38,7 @@ if not os.path.exists('raylib_wasm'):
         os.rename('raylib-5.0_webassembly', 'raylib_wasm')
 
     os.remove('raylib.zip')
-    
+
 #import os
 #os.environ['CFLAGS'] = '-O3 -march=native -Wall'
 
@@ -258,6 +263,23 @@ extension_paths = [
     'pufferlib/ocean/trash_pickup/cy_trash_pickup'
 ]
 
+system = platform.system()
+
+if system == "Darwin":
+    # On macOS, use @loader_path.
+    # The extension “.so” is typically in pufferlib/ocean/...,
+    # and “raylib/lib” is (maybe) two directories up from ocean/<env>.
+    # So @loader_path/../../raylib/lib is common.
+    rpath_arg = "-Wl,-rpath,@loader_path/../../raylib/lib"
+elif system == "Linux":
+    # On Linux, $ORIGIN works
+    rpath_arg = "-Wl,-rpath,$ORIGIN/raylib/lib"
+else:
+    # Windows, or anything else
+    # Typically you either copy .dll next to the extension or rely on PATH
+    rpath_arg = ""
+
+
 extensions = [Extension(
     path.replace('/', '.'),
     [path + '.pyx'],
@@ -265,11 +287,16 @@ extensions = [Extension(
     library_dirs=['raylib/lib'],
     libraries=["raylib"],
     runtime_library_dirs=["raylib/lib"],
-    extra_compile_args=['-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', '-DPLATFORM_DESKTOP', '-O2', '-Wno-alloc-size-larger-than'],#, '-g'],
-    extra_link_args=["-Wl,-rpath,$ORIGIN/raylib/lib"]
+    extra_compile_args=[
+        '-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION',
+        '-DPLATFORM_DESKTOP',
+        '-O2',
+        '-Wno-alloc-size-larger-than',
+    ],
+    extra_link_args=[rpath_arg] if rpath_arg else []
 
 ) for path in extension_paths]
- 
+
 setup(
     name="pufferlib",
     description="PufferAI Library"
@@ -302,13 +329,14 @@ setup(
         'common': common,
         **environments,
     },
+    # TODO: ruff format this file! Some weird margins happening here...
     ext_modules = cythonize([
         "pufferlib/extensions.pyx",
         "c_gae.pyx",
         "pufferlib/puffernet.pyx",
         "pufferlib/ocean/grid/c_grid.pyx",
         *extensions,
-    ], 
+    ],
     compiler_directives={
         'language_level': 3,
         'boundscheck': False,
@@ -318,11 +346,8 @@ setup(
         'nonecheck': False,
         'profile': False,
     },
-       #nthreads=6,
-       #annotate=True,
-       #compiler_directives={'profile': True},# annotate=True
     ),
-    include_dirs=[numpy.get_include(), 'raylib-5.0_linux_amd64/include'],
+    include_dirs=[numpy.get_include(), RAYLIB_INCLUDE_DIR],
     python_requires=">=3.8",
     license="MIT",
     author="Joseph Suarez",
@@ -339,12 +364,3 @@ setup(
         "Programming Language :: Python :: 3.11",
     ],
 )
-
-#stable_baselines3
-#supersuit==3.3.5
-#'git+https://github.com/oxwhirl/smac.git',
-
-#curl -L -o smac.zip https://blzdistsc2-a.akamaihd.net/Linux/SC2.4.10.zip
-#unzip -P iagreetotheeula smac.zip 
-#curl -L -o maps.zip https://github.com/oxwhirl/smac/releases/download/v0.1-beta1/SMAC_Maps.zip
-#unzip maps.zip && mv SMAC_Maps/ StarCraftII/Maps/
